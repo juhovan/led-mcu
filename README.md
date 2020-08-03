@@ -32,3 +32,13 @@ light:
       - colorloop
     retain: true
 ```
+
+Over The Air update:
+
+Documentation: https://arduino-esp8266.readthedocs.io/en/latest/ota_updates/readme.html#web-browser
+
+Basic steps:
+
+- Use PlatformIO: Build
+- Browse to http://IP_ADDRESS/update or http://hostname.local/update
+- Select .pio/build/nodemcuv2/firmware.elf from work directory as Firmware and press Update Firmware
