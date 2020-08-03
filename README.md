@@ -2,7 +2,7 @@
 
 Used to control addressable LED strips with MQTT using a ESP8266 NodeMCU, to be used with Home Assistant.
 
-Setup:
+### Setup:
 
 - Clone/download this repository
 - Copy `include/config.h.example` as `include/config.h`
@@ -33,7 +33,7 @@ light:
     retain: true
 ```
 
-Over The Air update:
+### Over The Air update:
 
 Documentation: https://arduino-esp8266.readthedocs.io/en/latest/ota_updates/readme.html#web-browser
 
@@ -41,4 +41,4 @@ Basic steps:
 
 - Use PlatformIO: Build
 - Browse to http://IP_ADDRESS/update or http://hostname.local/update
-- Select .pio/build/nodemcuv2/firmware.elf from work directory as Firmware and press Update Firmware
+- Select .pio/build/nodemcuv2/firmware.bin from work directory as Firmware and press Update Firmware
