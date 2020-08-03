@@ -11,11 +11,17 @@ const uint8_t lights[360] = {0, 0, 0, 0, 0, 1, 1, 2, 2, 3, 4, 5, 6, 7, 8, 9, 11,
 
 void runEffect()
 {
-    effectCounter++;
-    effectTimerID = timer.setTimeout(10, runEffect);
     switch (effect)
     {
+    case eStable:
+        for (int i = 0; i < NUM_LEDS; i++)
+        {
+            stripLeds[i] = RgbwColor(red, green, blue, white);
+        }
+        break;
     case eColorLoop:
+        effectCounter++;
+        effectTimerID = timer.setTimeout(10, runEffect);
         for (int i = 0; i < NUM_LEDS; i++)
         {
             int angle = (effectCounter / 10 + i) % 360;

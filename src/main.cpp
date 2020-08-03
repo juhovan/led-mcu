@@ -28,17 +28,17 @@ SimpleTimer timer;
 NeoPixelBus<NeoGrbwFeature, Neo800KbpsMethod> strip(NUM_LEDS);
 RgbwColor stripLeds[NUM_LEDS] = {};
 Effect effect = eStable;
-
-WiFiClient espClient;
-PubSubClient client(espClient);
-bool boot = true;
-char charPayload[50];
-int sunriseDuration = NUM_LEDS;
-
 uint8_t red = 0;
 uint8_t green = 0;
 uint8_t blue = 0;
 uint8_t white = 0;
+
+WiFiClient espClient;
+PubSubClient client(espClient);
+bool boot = true;
+bool on = true;
+char charPayload[50];
+int sunriseDuration = NUM_LEDS;
 
 void callback(char *topic, byte *payload, unsigned int length)
 {
@@ -59,26 +59,17 @@ void callback(char *topic, byte *payload, unsigned int length)
   {
     if (strcmp(charPayload, "OFF") == 0)
     {
+      on = false;
       stopEffect();
-      effect = eOff;
     }
     else if (strcmp(charPayload, "ON") == 0)
     {
-      if (effect == eOff)
-      {
-        stopEffect();
-        effect = eStable;
-        for (int i = 0; i < NUM_LEDS; i++)
-        {
-          stripLeds[i] = RgbwColor(red, green, blue, white);
-        }
-        client.publish(USER_MQTT_CLIENT_NAME "/effect", "stable", true);
-        client.publish(USER_MQTT_CLIENT_NAME "/effectState", "stable", true);
-      }
+      on = true;
+      startEffect();
     }
     client.publish(USER_MQTT_CLIENT_NAME "/state", charPayload, true);
   }
-  else if (boot && effect == eOff)
+  else if (boot && !on)
   {
     // Recently booted and effect is already set to off, that means we already got a OFF command.
     // Therefore all other (possibly "out-of-order") messages right after boot should be ignored to
@@ -106,14 +97,16 @@ void callback(char *topic, byte *payload, unsigned int length)
     if (strcmp(charPayload, "stable") == 0)
     {
       effect = eStable;
-      for (int i = 0; i < NUM_LEDS; i++)
-      {
-        stripLeds[i] = RgbwColor(red, green, blue, white);
-      }
+      startEffect();
     }
     else if (strcmp(charPayload, "colorloop") == 0)
     {
       effect = eColorLoop;
+      startEffect();
+    }
+    else if (strcmp(charPayload, "gradient") == 0)
+    {
+      effect = eGradient;
       startEffect();
     }
     else if (strcmp(charPayload, "sunrise") == 0)
@@ -138,27 +131,17 @@ void callback(char *topic, byte *payload, unsigned int length)
     white = intPayload;
     switch (effect)
     {
-    case eStable:
-      for (int i = 0; i < NUM_LEDS; i++)
-      {
-        stripLeds[i] = RgbwColor(red, green, blue, white);
-      }
-      break;
     case eSunrise:
     case eColorLoop:
       // Setting the white value should stop effects that don't care about color
-      stopEffect();
       effect = eStable;
-      for (int i = 0; i < NUM_LEDS; i++)
-      {
-        stripLeds[i] = RgbwColor(red, green, blue, white);
-      }
       client.publish(USER_MQTT_CLIENT_NAME "/effect", "stable", true);
       client.publish(USER_MQTT_CLIENT_NAME "/effectState", "stable", true);
       break;
     default:
       break;
     }
+    startEffect();
     client.publish(USER_MQTT_CLIENT_NAME "/whiteState", charPayload, true);
   }
   else if (newTopic == USER_MQTT_CLIENT_NAME "/color")
@@ -172,27 +155,17 @@ void callback(char *topic, byte *payload, unsigned int length)
       blue = newPayload.substring(lastIndex + 1).toInt();
       switch (effect)
       {
-      case eStable:
-        for (int i = 0; i < NUM_LEDS; i++)
-        {
-          stripLeds[i] = RgbwColor(red, green, blue, white);
-        }
-        break;
       case eSunrise:
       case eColorLoop:
         // Setting the color should stop effects that don't care about color
-        stopEffect();
         effect = eStable;
-        for (int i = 0; i < NUM_LEDS; i++)
-        {
-          stripLeds[i] = RgbwColor(red, green, blue, white);
-        }
         client.publish(USER_MQTT_CLIENT_NAME "/effect", "stable", true);
         client.publish(USER_MQTT_CLIENT_NAME "/effectState", "stable", true);
         break;
       default:
         break;
       }
+      startEffect();
       client.publish(USER_MQTT_CLIENT_NAME "/colorState", charPayload, true);
     }
   }
@@ -314,23 +287,26 @@ void loop()
   client.loop();
   timer.run();
 
-  switch (effect)
+  if (on)
   {
-  case eSunrise:
-    sunRise();
-    break;
-  case eOff:
+    if (effect == eSunrise)
+    {
+      sunRise();
+    }
+    else
+    {
+      for (int i = 0; i < NUM_LEDS; i++)
+      {
+        strip.SetPixelColor(i, stripLeds[i]);
+      }
+    }
+  }
+  else
+  {
     for (int i = 0; i < NUM_LEDS; i++)
     {
       strip.SetPixelColor(i, RgbwColor(0, 0, 0, 0));
     }
-    break;
-  default:
-    for (int i = 0; i < NUM_LEDS; i++)
-    {
-      strip.SetPixelColor(i, stripLeds[i]);
-    }
-    break;
   }
 
   strip.Show();
