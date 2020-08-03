@@ -9,3 +9,7 @@
 #define NUM_LEDS 160   // number of LEDs in the strip
 #define BRIGHTNESS 255 // strip brightness 255 max
 #define SUNSIZE 30     // percentage of the strip that is the "sun"
+
+#define HTTPUpdateServer
+#define USER_HTTP_USERNAME "some_user"
+#define USER_HTTP_PASSWORD "hunter3"

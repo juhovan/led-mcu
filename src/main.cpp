@@ -5,6 +5,14 @@
 
 #include "common.h"
 
+#ifdef HTTPUpdateServer
+  #include <ESP8266HTTPUpdateServer.h>
+  #include <ESP8266WebServer.h>
+
+  ESP8266WebServer httpUpdateServer(80);
+  ESP8266HTTPUpdateServer httpUpdater;
+#endif
+
 #define LED_ON LOW
 #define LED_OFF HIGH
 
@@ -212,6 +220,18 @@ void reconnect()
   }
 }
 
+#ifdef HTTPUpdateServer
+  void setup_http_server()
+  {
+    MDNS.begin(USER_MQTT_CLIENT_NAME);
+
+    httpUpdater.setup(&httpUpdateServer, USER_HTTP_USERNAME, USER_HTTP_PASSWORD);
+    httpUpdateServer.begin();
+
+    MDNS.addService("http", "tcp", 80);
+  }
+#endif
+
 void setup()
 {
   pinMode(LED_BUILTIN, OUTPUT);
@@ -222,6 +242,10 @@ void setup()
   strip.Show();
 
   setup_wifi();
+
+  #ifdef HTTPUpdateServer
+    setup_http_server();
+  #endif
 
   client.setServer(mqtt_server, mqtt_port);
   client.setCallback(callback);
@@ -260,4 +284,8 @@ void loop()
   }
 
   strip.Show();
+
+  #ifdef HTTPUpdateServer
+    httpUpdateServer.handleClient();
+  #endif
 }
