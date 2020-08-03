@@ -27,7 +27,7 @@ const char *mqtt_client_name = USER_MQTT_CLIENT_NAME;
 SimpleTimer timer;
 NeoPixelBus<NeoGrbwFeature, Neo800KbpsMethod> strip(NUM_LEDS);
 RgbwColor stripLeds[NUM_LEDS] = {};
-Effect effect = eOff;
+Effect effect = eStable;
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -80,68 +80,79 @@ void callback(char *topic, byte *payload, unsigned int length)
   }
   else if (newTopic == USER_MQTT_CLIENT_NAME "/effect")
   {
-    stopEffect();
-    if (strcmp(charPayload, "stable") == 0)
+    if (!boot || effect != eOff)
     {
+      stopEffect();
+      if (strcmp(charPayload, "stable") == 0)
+      {
+        effect = eStable;
+        for (int i = 0; i < NUM_LEDS; i++)
+        {
+          stripLeds[i] = RgbwColor(red, green, blue, white);
+        }
+      }
+      else if (strcmp(charPayload, "colorloop") == 0)
+      {
+        effect = eColorLoop;
+        startEffect();
+      }
+      else if (strcmp(charPayload, "sunrise") == 0)
+      {
+        effect = eSunrise;
+        startSunrise(sunriseDuration);
+      }
+      client.publish(USER_MQTT_CLIENT_NAME "/effectState", charPayload, true);
+    }
+  }
+  else if (newTopic == USER_MQTT_CLIENT_NAME "/wakeAlarm")
+  {
+    if (!boot || effect != eOff)
+    {
+      stopEffect();
+      effect = eSunrise;
+      sunriseDuration = intPayload;
+      startSunrise(intPayload);
+      client.publish(USER_MQTT_CLIENT_NAME "/effect", "sunrise", true);
+      client.publish(USER_MQTT_CLIENT_NAME "/effectState", "sunrise", true);
+      client.publish(USER_MQTT_CLIENT_NAME "/state", "ON", true);
+    }
+  }
+  else if (newTopic == USER_MQTT_CLIENT_NAME "/white")
+  {
+    white = intPayload;
+    if (!boot || effect != eOff)
+    {
+      stopEffect();
       effect = eStable;
+      client.publish(USER_MQTT_CLIENT_NAME "/whiteState", charPayload, true);
+      client.publish(USER_MQTT_CLIENT_NAME "/effect", "stable", true);
+      client.publish(USER_MQTT_CLIENT_NAME "/effectState", "stable", true);
       for (int i = 0; i < NUM_LEDS; i++)
       {
         stripLeds[i] = RgbwColor(red, green, blue, white);
       }
     }
-    else if (strcmp(charPayload, "colorloop") == 0)
-    {
-      effect = eColorLoop;
-      startEffect();
-    }
-    else if (strcmp(charPayload, "sunrise") == 0)
-    {
-      effect = eSunrise;
-      startSunrise(sunriseDuration);
-    }
-    client.publish(USER_MQTT_CLIENT_NAME "/effectState", charPayload, true);
-  }
-  else if (newTopic == USER_MQTT_CLIENT_NAME "/wakeAlarm")
-  {
-    stopEffect();
-    effect = eSunrise;
-    sunriseDuration = intPayload;
-    startSunrise(intPayload);
-    client.publish(USER_MQTT_CLIENT_NAME "/effect", "sunrise", true);
-    client.publish(USER_MQTT_CLIENT_NAME "/effectState", "sunrise", true);
-    client.publish(USER_MQTT_CLIENT_NAME "/state", "ON", true);
-  }
-  else if (newTopic == USER_MQTT_CLIENT_NAME "/white")
-  {
-    stopEffect();
-    effect = eStable;
-    client.publish(USER_MQTT_CLIENT_NAME "/whiteState", charPayload, true);
-    client.publish(USER_MQTT_CLIENT_NAME "/effect", "stable", true);
-    client.publish(USER_MQTT_CLIENT_NAME "/effectState", "stable", true);
-    white = intPayload;
-    for (int i = 0; i < NUM_LEDS; i++)
-    {
-      stripLeds[i] = RgbwColor(red, green, blue, white);
-    }
   }
   else if (newTopic == USER_MQTT_CLIENT_NAME "/color")
   {
-    stopEffect();
-    effect = eStable;
-    client.publish(USER_MQTT_CLIENT_NAME "/colorState", charPayload, true);
-    client.publish(USER_MQTT_CLIENT_NAME "/effect", "stable", true);
-    client.publish(USER_MQTT_CLIENT_NAME "/effectState", "stable", true);
     int firstIndex = newPayload.indexOf(',');
     int lastIndex = newPayload.lastIndexOf(',');
-
     if ((firstIndex > -1) && (lastIndex > -1) && (firstIndex != lastIndex))
     {
       red = newPayload.substring(0, firstIndex).toInt();
       green = newPayload.substring(firstIndex + 1, lastIndex).toInt();
       blue = newPayload.substring(lastIndex + 1).toInt();
-      for (int i = 0; i < NUM_LEDS; i++)
+      if (!boot || effect != eOff)
       {
-        stripLeds[i] = RgbwColor(red, green, blue, white);
+        stopEffect();
+        effect = eStable;
+        client.publish(USER_MQTT_CLIENT_NAME "/colorState", charPayload, true);
+        client.publish(USER_MQTT_CLIENT_NAME "/effect", "stable", true);
+        client.publish(USER_MQTT_CLIENT_NAME "/effectState", "stable", true);
+        for (int i = 0; i < NUM_LEDS; i++)
+        {
+          stripLeds[i] = RgbwColor(red, green, blue, white);
+        }
       }
     }
   }
@@ -191,7 +202,6 @@ void reconnect()
         if (boot == true)
         {
           client.publish(USER_MQTT_CLIENT_NAME "/checkIn", "rebooted");
-          boot = false;
         }
         else if (boot == false)
         {
@@ -288,4 +298,9 @@ void loop()
 #ifdef HTTPUpdateServer
   httpUpdateServer.handleClient();
 #endif
+
+  if (boot && millis() > 30000)
+  {
+    boot = false;
+  }
 }
