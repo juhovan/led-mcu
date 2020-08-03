@@ -78,60 +78,88 @@ void callback(char *topic, byte *payload, unsigned int length)
     }
     client.publish(USER_MQTT_CLIENT_NAME "/state", charPayload, true);
   }
+  else if (boot && effect == eOff)
+  {
+    // Recently booted and effect is already set to off, that means we already got a OFF command.
+    // Therefore all other (possibly "out-of-order") messages right after boot should be ignored to
+    // prevent unintentionally turning the leds on after a reboot if the desired state is OFF.
+    // Despite that color and white values should be restored to memory.
+    if (newTopic == USER_MQTT_CLIENT_NAME "/white")
+    {
+      white = intPayload;
+    }
+    else if (newTopic == USER_MQTT_CLIENT_NAME "/color")
+    {
+      int firstIndex = newPayload.indexOf(',');
+      int lastIndex = newPayload.lastIndexOf(',');
+      if ((firstIndex > -1) && (lastIndex > -1) && (firstIndex != lastIndex))
+      {
+        red = newPayload.substring(0, firstIndex).toInt();
+        green = newPayload.substring(firstIndex + 1, lastIndex).toInt();
+        blue = newPayload.substring(lastIndex + 1).toInt();
+      }
+    }
+  }
   else if (newTopic == USER_MQTT_CLIENT_NAME "/effect")
   {
-    if (!boot || effect != eOff)
+    stopEffect();
+    if (strcmp(charPayload, "stable") == 0)
     {
-      stopEffect();
-      if (strcmp(charPayload, "stable") == 0)
-      {
-        effect = eStable;
-        for (int i = 0; i < NUM_LEDS; i++)
-        {
-          stripLeds[i] = RgbwColor(red, green, blue, white);
-        }
-      }
-      else if (strcmp(charPayload, "colorloop") == 0)
-      {
-        effect = eColorLoop;
-        startEffect();
-      }
-      else if (strcmp(charPayload, "sunrise") == 0)
-      {
-        effect = eSunrise;
-        startSunrise(sunriseDuration);
-      }
-      client.publish(USER_MQTT_CLIENT_NAME "/effectState", charPayload, true);
-    }
-  }
-  else if (newTopic == USER_MQTT_CLIENT_NAME "/wakeAlarm")
-  {
-    if (!boot || effect != eOff)
-    {
-      stopEffect();
-      effect = eSunrise;
-      sunriseDuration = intPayload;
-      startSunrise(intPayload);
-      client.publish(USER_MQTT_CLIENT_NAME "/effect", "sunrise", true);
-      client.publish(USER_MQTT_CLIENT_NAME "/effectState", "sunrise", true);
-      client.publish(USER_MQTT_CLIENT_NAME "/state", "ON", true);
-    }
-  }
-  else if (newTopic == USER_MQTT_CLIENT_NAME "/white")
-  {
-    white = intPayload;
-    if (!boot || effect != eOff)
-    {
-      stopEffect();
       effect = eStable;
-      client.publish(USER_MQTT_CLIENT_NAME "/whiteState", charPayload, true);
-      client.publish(USER_MQTT_CLIENT_NAME "/effect", "stable", true);
-      client.publish(USER_MQTT_CLIENT_NAME "/effectState", "stable", true);
       for (int i = 0; i < NUM_LEDS; i++)
       {
         stripLeds[i] = RgbwColor(red, green, blue, white);
       }
     }
+    else if (strcmp(charPayload, "colorloop") == 0)
+    {
+      effect = eColorLoop;
+      startEffect();
+    }
+    else if (strcmp(charPayload, "sunrise") == 0)
+    {
+      effect = eSunrise;
+      startSunrise(sunriseDuration);
+    }
+    client.publish(USER_MQTT_CLIENT_NAME "/effectState", charPayload, true);
+  }
+  else if (newTopic == USER_MQTT_CLIENT_NAME "/wakeAlarm")
+  {
+    stopEffect();
+    effect = eSunrise;
+    sunriseDuration = intPayload;
+    startSunrise(intPayload);
+    client.publish(USER_MQTT_CLIENT_NAME "/effect", "sunrise", true);
+    client.publish(USER_MQTT_CLIENT_NAME "/effectState", "sunrise", true);
+    client.publish(USER_MQTT_CLIENT_NAME "/state", "ON", true);
+  }
+  else if (newTopic == USER_MQTT_CLIENT_NAME "/white")
+  {
+    white = intPayload;
+    switch (effect)
+    {
+    case eStable:
+      for (int i = 0; i < NUM_LEDS; i++)
+      {
+        stripLeds[i] = RgbwColor(red, green, blue, white);
+      }
+      break;
+    case eSunrise:
+    case eColorLoop:
+      // Setting the white value should stop effects that don't care about color
+      stopEffect();
+      effect = eStable;
+      for (int i = 0; i < NUM_LEDS; i++)
+      {
+        stripLeds[i] = RgbwColor(red, green, blue, white);
+      }
+      client.publish(USER_MQTT_CLIENT_NAME "/effect", "stable", true);
+      client.publish(USER_MQTT_CLIENT_NAME "/effectState", "stable", true);
+      break;
+    default:
+      break;
+    }
+    client.publish(USER_MQTT_CLIENT_NAME "/whiteState", charPayload, true);
   }
   else if (newTopic == USER_MQTT_CLIENT_NAME "/color")
   {
@@ -142,18 +170,30 @@ void callback(char *topic, byte *payload, unsigned int length)
       red = newPayload.substring(0, firstIndex).toInt();
       green = newPayload.substring(firstIndex + 1, lastIndex).toInt();
       blue = newPayload.substring(lastIndex + 1).toInt();
-      if (!boot || effect != eOff)
+      switch (effect)
       {
-        stopEffect();
-        effect = eStable;
-        client.publish(USER_MQTT_CLIENT_NAME "/colorState", charPayload, true);
-        client.publish(USER_MQTT_CLIENT_NAME "/effect", "stable", true);
-        client.publish(USER_MQTT_CLIENT_NAME "/effectState", "stable", true);
+      case eStable:
         for (int i = 0; i < NUM_LEDS; i++)
         {
           stripLeds[i] = RgbwColor(red, green, blue, white);
         }
+        break;
+      case eSunrise:
+      case eColorLoop:
+        // Setting the color should stop effects that don't care about color
+        stopEffect();
+        effect = eStable;
+        for (int i = 0; i < NUM_LEDS; i++)
+        {
+          stripLeds[i] = RgbwColor(red, green, blue, white);
+        }
+        client.publish(USER_MQTT_CLIENT_NAME "/effect", "stable", true);
+        client.publish(USER_MQTT_CLIENT_NAME "/effectState", "stable", true);
+        break;
+      default:
+        break;
       }
+      client.publish(USER_MQTT_CLIENT_NAME "/colorState", charPayload, true);
     }
   }
 }
