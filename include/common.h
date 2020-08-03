@@ -6,6 +6,7 @@
 enum Effect
 {
     eStable,
+    eGradient,
     eSunrise,
     eColorLoop
 };
@@ -18,6 +19,8 @@ extern uint8_t red;
 extern uint8_t green;
 extern uint8_t blue;
 extern uint8_t white;
+extern char gradientMode;
+extern int gradientExtent;
 
 void sunRise();
 void startSunrise(int duration);

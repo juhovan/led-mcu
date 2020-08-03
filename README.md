@@ -28,10 +28,26 @@ light:
     effect_state_topic: "LED_MCU/effectState"
     effect_list: 
       - stable
+      - gradient
       - sunrise
       - colorloop
     retain: true
 ```
+
+To trigger a sunrise (turn the leds on with the sunrise effect), send a duration in seconds to `LED_MCU/wakeAlarm`
+
+To configure the gradient, send a message to `LED_MCU/setGradient` with payload `X Y` where X is one of:
+
+- `N` near, start the gradient from the "MCU end" of the strip
+- `F` far, start the gradient from the opposite end
+- `C` center, start the gradient from the center
+- `E` edges, start the gradient from both ends
+
+And Y is the gradient extent in percentage of strip length (0-100, can go over 100%) from the start
+
+For example `E 50` will start a gradient from both ends that reaches zero intensity in the center. `N 200` will start a gradient from the "MCU end" and reach half intensity at the opposite end.
+
+Do note that due to rounding to 8bits for the leds and the fact that even the dimmest settings of the leds are rather bright, you might need to fiddle with the values a little to find what you want.
 
 ### Over The Air update:
 

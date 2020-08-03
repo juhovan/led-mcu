@@ -32,6 +32,8 @@ uint8_t red = 0;
 uint8_t green = 0;
 uint8_t blue = 0;
 uint8_t white = 0;
+char gradientMode = 'E';
+int gradientExtent = 50;
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -61,13 +63,14 @@ void callback(char *topic, byte *payload, unsigned int length)
     {
       on = false;
       stopEffect();
+      client.publish(USER_MQTT_CLIENT_NAME "/state", "OFF", true);
     }
     else if (strcmp(charPayload, "ON") == 0)
     {
       on = true;
       startEffect();
+      client.publish(USER_MQTT_CLIENT_NAME "/state", "ON", true);
     }
-    client.publish(USER_MQTT_CLIENT_NAME "/state", charPayload, true);
   }
   else if (boot && !on)
   {
@@ -124,7 +127,29 @@ void callback(char *topic, byte *payload, unsigned int length)
     startSunrise(intPayload);
     client.publish(USER_MQTT_CLIENT_NAME "/effect", "sunrise", true);
     client.publish(USER_MQTT_CLIENT_NAME "/effectState", "sunrise", true);
-    client.publish(USER_MQTT_CLIENT_NAME "/state", "ON", true);
+  }
+  else if (newTopic == USER_MQTT_CLIENT_NAME "/setGradient")
+  {
+    if (newPayload.length() >= 3)
+    {
+      char mode = newPayload[0];
+      switch (mode)
+      {
+      case 'N':
+      case 'F':
+      case 'C':
+      case 'E':
+        gradientMode = mode;
+        gradientExtent = newPayload.substring(2).toInt();
+        break;
+      default:
+        break;
+      }
+      effect = eGradient;
+      client.publish(USER_MQTT_CLIENT_NAME "/effect", "gradient", true);
+      client.publish(USER_MQTT_CLIENT_NAME "/effectState", "gradient", true);
+      startEffect();
+    }
   }
   else if (newTopic == USER_MQTT_CLIENT_NAME "/white")
   {
@@ -225,6 +250,7 @@ void reconnect()
         client.subscribe(USER_MQTT_CLIENT_NAME "/color");
         client.subscribe(USER_MQTT_CLIENT_NAME "/white");
         client.subscribe(USER_MQTT_CLIENT_NAME "/wakeAlarm");
+        client.subscribe(USER_MQTT_CLIENT_NAME "/setGradient");
       }
       else
       {
