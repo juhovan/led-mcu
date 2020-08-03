@@ -74,10 +74,10 @@ void callback(char *topic, byte *payload, unsigned int length)
   }
   else if (boot && !on)
   {
-    // Recently booted and effect is already set to off, that means we already got a OFF command.
-    // Therefore all other (possibly "out-of-order") messages right after boot should be ignored to
+    // Recently booted and state is already set to off, that means we already got a OFF command.
+    // Therefore all other (possibly "out-of-order") commands right after boot should be ignored to
     // prevent unintentionally turning the leds on after a reboot if the desired state is OFF.
-    // Despite that color and white values should be restored to memory.
+    // Color, white value and gradient settings should be restored to memory.
     if (newTopic == USER_MQTT_CLIENT_NAME "/white")
     {
       white = intPayload;
@@ -91,6 +91,25 @@ void callback(char *topic, byte *payload, unsigned int length)
         red = newPayload.substring(0, firstIndex).toInt();
         green = newPayload.substring(firstIndex + 1, lastIndex).toInt();
         blue = newPayload.substring(lastIndex + 1).toInt();
+      }
+    }
+    else if (newTopic == USER_MQTT_CLIENT_NAME "/setGradient")
+    {
+      if (newPayload.length() >= 3)
+      {
+        char mode = newPayload[0];
+        switch (mode)
+        {
+        case 'N':
+        case 'F':
+        case 'C':
+        case 'E':
+          gradientMode = mode;
+          gradientExtent = newPayload.substring(2).toInt();
+          break;
+        default:
+          break;
+        }
       }
     }
   }
