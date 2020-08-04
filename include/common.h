@@ -12,7 +12,6 @@ enum Effect
 };
 
 extern SimpleTimer timer;
-extern NeoPixelBus<NeoGrbwFeature, Neo800KbpsMethod> strip;
 extern RgbwColor stripLeds[NUM_LEDS];
 extern Effect effect;
 extern uint8_t red;
@@ -21,8 +20,9 @@ extern uint8_t blue;
 extern uint8_t white;
 extern char gradientMode;
 extern int gradientExtent;
+extern int sunriseDuration;
 
-void sunRise();
+void sunrise();
+void startEffect(Effect e);
 void startSunrise(int duration);
-void startEffect();
 void stopEffect();

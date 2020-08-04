@@ -106,12 +106,12 @@ void drawSun()
         int redValue = map(sunFadeStep, 0, 256, minRed, 255);
         int greenValue = map(sunFadeStep, 0, 256, minGreen, 64);
         int whiteValue = map(sunFadeStep, 0, 256, 0, whiteLevel);
-        strip.SetPixelColor(newSunLeft, RgbwColor(redValue, greenValue, 0, whiteValue));
-        strip.SetPixelColor(newSunRight, RgbwColor(redValue, greenValue, 0, whiteValue));
+        stripLeds[newSunLeft] = RgbwColor(redValue, greenValue, 0, whiteValue);
+        stripLeds[newSunRight] = RgbwColor(redValue, greenValue, 0, whiteValue);
     }
     for (int i = sunStart; i < sunStart + currentSun; i++)
     {
-        strip.SetPixelColor(i, RgbwColor(255, 64, 0, whiteLevel));
+        stripLeds[i] = RgbwColor(255, 64, 0, whiteLevel);
     }
     oldSun = currentSun;
 }
@@ -134,12 +134,12 @@ void drawAurora()
     {
         int redValue = map(fadeStep, 0, 256, whiteLevel / 2, 127);
         int greenValue = map(fadeStep, 0, 256, 0, 25);
-        strip.SetPixelColor(newAuroraRight, RgbwColor(redValue, greenValue, 0, 0));
-        strip.SetPixelColor(newAuroraLeft, RgbwColor(redValue, greenValue, 0, 0));
+        stripLeds[newAuroraRight] = RgbwColor(redValue, greenValue, 0, 0);
+        stripLeds[newAuroraLeft] = RgbwColor(redValue, greenValue, 0, 0);
     }
     for (int i = sunStart; i < sunStart + currentAurora; i++)
     {
-        strip.SetPixelColor(i, RgbwColor(127, 25, 0, 0));
+        stripLeds[i] = RgbwColor(127, 25, 0, 0);
     }
     oldFadeStep = fadeStep;
     oldAurora = currentAurora;
@@ -149,11 +149,11 @@ void drawAmbient()
 {
     for (int i = 0; i < NUM_LEDS; i++)
     {
-        strip.SetPixelColor(i, RgbwColor(whiteLevel / 2, 0, 0, 0));
+        stripLeds[i] = RgbwColor(whiteLevel / 2, 0, 0, 0);
     }
 }
 
-void sunRise()
+void sunrise()
 {
     drawAmbient();
     drawAurora();

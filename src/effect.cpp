@@ -75,6 +75,10 @@ void runEffect()
     case eGradient:
         gradient();
         break;
+    case eSunrise:
+        effectTimerID = timer.setTimeout(10, runEffect);
+        sunrise();
+        break;
     case eColorLoop:
         effectCounter++;
         effectTimerID = timer.setTimeout(10, runEffect);
@@ -89,12 +93,15 @@ void runEffect()
     }
 }
 
-void startEffect()
+void startEffect(Effect e)
 {
+    stopEffect();
+    effect = e;
     effectCounter = 0;
-    if (effectTimerID != -1)
+    if (effect == eSunrise)
     {
-        timer.deleteTimer(effectTimerID);
+        // Sunrise is its own self-contained spaghetti with its own timers that need to be started as well
+        startSunrise(sunriseDuration);
     }
     runEffect();
 }

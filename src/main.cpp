@@ -24,8 +24,8 @@ const char *mqtt_user = USER_MQTT_USERNAME;
 const char *mqtt_pass = USER_MQTT_PASSWORD;
 const char *mqtt_client_name = USER_MQTT_CLIENT_NAME;
 
+// Globals
 SimpleTimer timer;
-NeoPixelBus<NeoGrbwFeature, Neo800KbpsMethod> strip(NUM_LEDS);
 RgbwColor stripLeds[NUM_LEDS] = {};
 Effect effect = eStable;
 uint8_t red = 0;
@@ -34,13 +34,15 @@ uint8_t blue = 0;
 uint8_t white = 0;
 char gradientMode = 'E';
 int gradientExtent = 50;
+int sunriseDuration = NUM_LEDS;
 
+// Locals
 WiFiClient espClient;
 PubSubClient client(espClient);
+NeoPixelBus<NeoGrbwFeature, Neo800KbpsMethod> strip(NUM_LEDS);
 bool boot = true;
 bool on = true;
 char charPayload[50];
-int sunriseDuration = NUM_LEDS;
 
 void callback(char *topic, byte *payload, unsigned int length)
 {
@@ -49,7 +51,7 @@ void callback(char *topic, byte *payload, unsigned int length)
   Serial.print(topic);
   Serial.print("] ");
   memset(&charPayload, 0, sizeof(charPayload));
-  memcpy(charPayload, payload, min<unsigned long>(sizeof(charPayload), (unsigned long)length));
+  memcpy(charPayload, payload, min(static_cast<unsigned int>(sizeof(charPayload)), length));
   charPayload[length] = '\0';
   String newPayload = String(charPayload);
   int intPayload = newPayload.toInt();
@@ -63,87 +65,52 @@ void callback(char *topic, byte *payload, unsigned int length)
     {
       on = false;
       stopEffect();
-      client.publish(USER_MQTT_CLIENT_NAME "/state", "OFF", true);
     }
     else if (strcmp(charPayload, "ON") == 0)
     {
       on = true;
-      startEffect();
-      client.publish(USER_MQTT_CLIENT_NAME "/state", "ON", true);
+      startEffect(effect);
     }
-  }
-  else if (boot && !on)
-  {
-    // Recently booted and state is already set to off, that means we already got a OFF command.
-    // Therefore all other (possibly "out-of-order") commands right after boot should be ignored to
-    // prevent unintentionally turning the leds on after a reboot if the desired state is OFF.
-    // Color, white value and gradient settings should be restored to memory.
-    if (newTopic == USER_MQTT_CLIENT_NAME "/white")
+    else
     {
-      white = intPayload;
+      Serial.print("Unknown command: ");
+      Serial.println(charPayload);
+      return;
     }
-    else if (newTopic == USER_MQTT_CLIENT_NAME "/color")
-    {
-      int firstIndex = newPayload.indexOf(',');
-      int lastIndex = newPayload.lastIndexOf(',');
-      if ((firstIndex > -1) && (lastIndex > -1) && (firstIndex != lastIndex))
-      {
-        red = newPayload.substring(0, firstIndex).toInt();
-        green = newPayload.substring(firstIndex + 1, lastIndex).toInt();
-        blue = newPayload.substring(lastIndex + 1).toInt();
-      }
-    }
-    else if (newTopic == USER_MQTT_CLIENT_NAME "/setGradient")
-    {
-      if (newPayload.length() >= 3)
-      {
-        char mode = newPayload[0];
-        switch (mode)
-        {
-        case 'N':
-        case 'F':
-        case 'C':
-        case 'E':
-          gradientMode = mode;
-          gradientExtent = newPayload.substring(2).toInt();
-          break;
-        default:
-          break;
-        }
-      }
-    }
+    client.publish(USER_MQTT_CLIENT_NAME "/state", charPayload, true);
   }
   else if (newTopic == USER_MQTT_CLIENT_NAME "/effect")
   {
-    stopEffect();
     if (strcmp(charPayload, "stable") == 0)
     {
-      effect = eStable;
-      startEffect();
+      startEffect(eStable);
     }
     else if (strcmp(charPayload, "colorloop") == 0)
     {
-      effect = eColorLoop;
-      startEffect();
+      startEffect(eColorLoop);
     }
     else if (strcmp(charPayload, "gradient") == 0)
     {
-      effect = eGradient;
-      startEffect();
+      startEffect(eGradient);
     }
     else if (strcmp(charPayload, "sunrise") == 0)
     {
-      effect = eSunrise;
-      startSunrise(sunriseDuration);
+      startEffect(eSunrise);
+    }
+    else
+    {
+      Serial.print("Unknown effect: ");
+      Serial.println(charPayload);
+      return;
     }
     client.publish(USER_MQTT_CLIENT_NAME "/effectState", charPayload, true);
   }
   else if (newTopic == USER_MQTT_CLIENT_NAME "/wakeAlarm")
   {
-    stopEffect();
-    effect = eSunrise;
+    on = true;
     sunriseDuration = intPayload;
-    startSunrise(intPayload);
+    startEffect(eSunrise);
+    client.publish(USER_MQTT_CLIENT_NAME "/state", "ON", true);
     client.publish(USER_MQTT_CLIENT_NAME "/effect", "sunrise", true);
     client.publish(USER_MQTT_CLIENT_NAME "/effectState", "sunrise", true);
   }
@@ -162,12 +129,19 @@ void callback(char *topic, byte *payload, unsigned int length)
         gradientExtent = newPayload.substring(2).toInt();
         break;
       default:
-        break;
+        Serial.print("Invalid gradient: ");
+        Serial.println(charPayload);
+        return;
       }
-      effect = eGradient;
+      startEffect(eGradient);
       client.publish(USER_MQTT_CLIENT_NAME "/effect", "gradient", true);
       client.publish(USER_MQTT_CLIENT_NAME "/effectState", "gradient", true);
-      startEffect();
+    }
+    else
+    {
+      Serial.print("Invalid gradient: ");
+      Serial.println(charPayload);
+      return;
     }
   }
   else if (newTopic == USER_MQTT_CLIENT_NAME "/white")
@@ -177,7 +151,7 @@ void callback(char *topic, byte *payload, unsigned int length)
     {
     case eSunrise:
     case eColorLoop:
-      // Setting the white value should stop effects that don't care about color
+      // Setting the white value should stop effects that don't use the configured color
       effect = eStable;
       client.publish(USER_MQTT_CLIENT_NAME "/effect", "stable", true);
       client.publish(USER_MQTT_CLIENT_NAME "/effectState", "stable", true);
@@ -185,7 +159,7 @@ void callback(char *topic, byte *payload, unsigned int length)
     default:
       break;
     }
-    startEffect();
+    startEffect(effect);
     client.publish(USER_MQTT_CLIENT_NAME "/whiteState", charPayload, true);
   }
   else if (newTopic == USER_MQTT_CLIENT_NAME "/color")
@@ -201,7 +175,7 @@ void callback(char *topic, byte *payload, unsigned int length)
       {
       case eSunrise:
       case eColorLoop:
-        // Setting the color should stop effects that don't care about color
+        // Setting the color should stop effects that don't use the configured color
         effect = eStable;
         client.publish(USER_MQTT_CLIENT_NAME "/effect", "stable", true);
         client.publish(USER_MQTT_CLIENT_NAME "/effectState", "stable", true);
@@ -209,7 +183,7 @@ void callback(char *topic, byte *payload, unsigned int length)
       default:
         break;
       }
-      startEffect();
+      startEffect(effect);
       client.publish(USER_MQTT_CLIENT_NAME "/colorState", charPayload, true);
     }
   }
@@ -256,11 +230,12 @@ void reconnect()
       {
         Serial.println("connected");
         client.publish(USER_MQTT_CLIENT_NAME "/availability", "online", true);
-        if (boot == true)
+        if (boot)
         {
           client.publish(USER_MQTT_CLIENT_NAME "/checkIn", "rebooted");
+          boot = false;
         }
-        else if (boot == false)
+        else
         {
           client.publish(USER_MQTT_CLIENT_NAME "/checkIn", "reconnected");
         }
@@ -334,16 +309,9 @@ void loop()
 
   if (on)
   {
-    if (effect == eSunrise)
+    for (int i = 0; i < NUM_LEDS; i++)
     {
-      sunRise();
-    }
-    else
-    {
-      for (int i = 0; i < NUM_LEDS; i++)
-      {
-        strip.SetPixelColor(i, stripLeds[i]);
-      }
+      strip.SetPixelColor(i, stripLeds[i]);
     }
   }
   else
@@ -359,9 +327,4 @@ void loop()
 #ifdef HTTPUpdateServer
   httpUpdateServer.handleClient();
 #endif
-
-  if (boot && millis() > 30000)
-  {
-    boot = false;
-  }
 }
