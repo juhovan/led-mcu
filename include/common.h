@@ -7,12 +7,15 @@ enum Effect
 {
     eStable,
     eGradient,
+    eCustom,
     eSunrise,
     eColorLoop
 };
 
 extern SimpleTimer timer;
 extern RgbwColor stripLeds[NUM_LEDS];
+extern RgbwColor customLeds[NUM_LEDS];
+extern byte enabledLeds[NUM_LEDS / 8 + 1];
 extern Effect effect;
 extern uint8_t red;
 extern uint8_t green;

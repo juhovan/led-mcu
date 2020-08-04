@@ -27,6 +27,8 @@ const char *mqtt_client_name = USER_MQTT_CLIENT_NAME;
 // Globals
 SimpleTimer timer;
 RgbwColor stripLeds[NUM_LEDS] = {};
+RgbwColor customLeds[NUM_LEDS] = {};
+byte enabledLeds[NUM_LEDS / 8 + 1] = {};
 Effect effect = eStable;
 uint8_t red = 0;
 uint8_t green = 0;
@@ -42,7 +44,24 @@ PubSubClient client(espClient);
 NeoPixelBus<NeoGrbwFeature, Neo800KbpsMethod> strip(NUM_LEDS);
 bool boot = true;
 bool on = true;
-char charPayload[50];
+char charPayload[MQTT_MAX_PACKET_SIZE];
+
+int char2int(char input)
+{
+  if (input >= '0' && input <= '9')
+  {
+    return input - '0';
+  }
+  if (input >= 'A' && input <= 'F')
+  {
+    return input - 'A' + 10;
+  }
+  if (input >= 'a' && input <= 'f')
+  {
+    return input - 'a' + 10;
+  }
+  return 0;
+}
 
 void callback(char *topic, byte *payload, unsigned int length)
 {
@@ -92,6 +111,10 @@ void callback(char *topic, byte *payload, unsigned int length)
     else if (strcmp(charPayload, "gradient") == 0)
     {
       startEffect(eGradient);
+    }
+    else if (strcmp(charPayload, "custom") == 0)
+    {
+      startEffect(eCustom);
     }
     else if (strcmp(charPayload, "sunrise") == 0)
     {
@@ -144,11 +167,64 @@ void callback(char *topic, byte *payload, unsigned int length)
       return;
     }
   }
+  else if (newTopic == USER_MQTT_CLIENT_NAME "/setCustom")
+  {
+    for (int i = 0; i < NUM_LEDS; i++)
+    {
+      customLeds[i] = RgbwColor(0, 0, 0, 0);
+    }
+    for (int i = 0; charPayload[i] && i / 8 <= NUM_LEDS; i++)
+    {
+      int value;
+      if (i % 2)
+      {
+        value = char2int(charPayload[i]);
+      }
+      else
+      {
+        value = char2int(charPayload[i]) << 4;
+      }
+      switch (i / 2 % 4)
+      {
+      case 0:
+        customLeds[i / 8].R |= value;
+        break;
+      case 1:
+        customLeds[i / 8].G |= value;
+        break;
+      case 2:
+        customLeds[i / 8].B |= value;
+        break;
+      case 3:
+        customLeds[i / 8].W |= value;
+        break;
+      }
+    }
+    startEffect(eCustom);
+    client.publish(USER_MQTT_CLIENT_NAME "/effect", "custom", true);
+    client.publish(USER_MQTT_CLIENT_NAME "/effectState", "custom", true);
+  }
+  else if (newTopic == USER_MQTT_CLIENT_NAME "/setEnabledLeds")
+  {
+    memset(&enabledLeds, 0, sizeof(enabledLeds));
+    for (int i = 0; charPayload[i] && i / 2 <= NUM_LEDS / 8; i++)
+    {
+      if (i % 2)
+      {
+        enabledLeds[i / 2] |= char2int(charPayload[i]);
+      }
+      else
+      {
+        enabledLeds[i / 2] = char2int(charPayload[i]) << 4;
+      }
+    }
+  }
   else if (newTopic == USER_MQTT_CLIENT_NAME "/white")
   {
     white = intPayload;
     switch (effect)
     {
+    case eCustom:
     case eSunrise:
     case eColorLoop:
       // Setting the white value should stop effects that don't use the configured color
@@ -173,6 +249,7 @@ void callback(char *topic, byte *payload, unsigned int length)
       blue = newPayload.substring(lastIndex + 1).toInt();
       switch (effect)
       {
+      case eCustom:
       case eSunrise:
       case eColorLoop:
         // Setting the color should stop effects that don't use the configured color
@@ -245,6 +322,8 @@ void reconnect()
         client.subscribe(USER_MQTT_CLIENT_NAME "/white");
         client.subscribe(USER_MQTT_CLIENT_NAME "/wakeAlarm");
         client.subscribe(USER_MQTT_CLIENT_NAME "/setGradient");
+        client.subscribe(USER_MQTT_CLIENT_NAME "/setCustom");
+        client.subscribe(USER_MQTT_CLIENT_NAME "/setEnabledLeds");
       }
       else
       {
@@ -277,6 +356,7 @@ void setup_http_server()
 
 void setup()
 {
+  memset(&enabledLeds, 0xff, sizeof(enabledLeds));
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, LED_ON);
 
@@ -311,7 +391,14 @@ void loop()
   {
     for (int i = 0; i < NUM_LEDS; i++)
     {
-      strip.SetPixelColor(i, stripLeds[i]);
+      if (enabledLeds[i / 8] >> (7 - (i % 8)) & 1)
+      {
+        strip.SetPixelColor(i, stripLeds[i]);
+      }
+      else
+      {
+        strip.SetPixelColor(i, RgbwColor(0, 0, 0, 0));
+      }
     }
   }
   else

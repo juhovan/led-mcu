@@ -75,6 +75,12 @@ void runEffect()
     case eGradient:
         gradient();
         break;
+    case eCustom:
+        for (int i = 0; i < NUM_LEDS; i++)
+        {
+            stripLeds[i] = customLeds[i];
+        }
+        break;
     case eSunrise:
         effectTimerID = timer.setTimeout(10, runEffect);
         sunrise();
