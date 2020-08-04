@@ -37,7 +37,9 @@ light:
 
 ## MQTT control
 
-All MQTT commands should be sent with the `retain` flag set to let the MCU restore the desired state and configuration after a reboot.
+All MQTT commands *except* the sunrise (`LED_MCU/wakeAlarm`) should be sent with the `retain` flag set to let the MCU restore the desired state and configuration after a reboot.
+
+The sunrise (`LED_MCU/wakeAlarm`) turns the leds on (as described below), and thus if it has the `retain` flag set, the MCU will incorrectly start with a sunrise after every reboot.
 
 ### Triggering a sunrise
 
