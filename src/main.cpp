@@ -63,6 +63,18 @@ int char2int(char input)
   return 0;
 }
 
+void publishAttrChange()
+{
+  char buf[256];
+  snprintf(buf, 256,
+           "{\"mcu_name\":\"" USER_MQTT_CLIENT_NAME "\","
+           "\"num_leds\":%d,"
+           "\"gradient_mode\":\"%c\","
+           "\"gradient_extent\":%d}",
+           NUM_LEDS, gradientMode, gradientExtent);
+  client.publish(USER_MQTT_CLIENT_NAME "/attributes", buf, true);
+}
+
 void callback(char *topic, byte *payload, unsigned int length)
 {
   Serial.print("Message arrived [");
@@ -159,6 +171,7 @@ void callback(char *topic, byte *payload, unsigned int length)
       startEffect(eGradient);
       client.publish(USER_MQTT_CLIENT_NAME "/effect", "gradient", true);
       client.publish(USER_MQTT_CLIENT_NAME "/effectState", "gradient", true);
+      publishAttrChange();
     }
     else
     {
@@ -203,6 +216,7 @@ void callback(char *topic, byte *payload, unsigned int length)
     startEffect(eCustom);
     client.publish(USER_MQTT_CLIENT_NAME "/effect", "custom", true);
     client.publish(USER_MQTT_CLIENT_NAME "/effectState", "custom", true);
+    // TODO: add this to attributes and publishAttrChange();
   }
   else if (newTopic == USER_MQTT_CLIENT_NAME "/setEnabledLeds")
   {
@@ -218,6 +232,7 @@ void callback(char *topic, byte *payload, unsigned int length)
         enabledLeds[i / 2] = char2int(charPayload[i]) << 4;
       }
     }
+    // TODO: add this to attributes and publishAttrChange();
   }
   else if (newTopic == USER_MQTT_CLIENT_NAME "/white")
   {
@@ -269,12 +284,9 @@ void callback(char *topic, byte *payload, unsigned int length)
 void setup_wifi()
 {
   WiFi.setSleepMode(WIFI_NONE_SLEEP);
-
   WiFi.mode(WIFI_STA);
-
   WiFi.hostname(USER_MQTT_CLIENT_NAME);
 
-  // We start by connecting to a WiFi network
   Serial.println();
   Serial.print("Connecting to ");
   Serial.println(ssid);
@@ -287,22 +299,25 @@ void setup_wifi()
     Serial.print(".");
   }
 
-  Serial.println("");
+  Serial.println();
   Serial.println("WiFi connected");
   Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
 }
 
-void reconnect()
+void checkConnection()
 {
-  // Loop until we're reconnected
+  if (client.connected())
+  {
+    return;
+  }
+  digitalWrite(LED_BUILTIN, LED_ON);
   int retries = 0;
   while (!client.connected())
   {
     if (retries < 150)
     {
       Serial.print("Attempting MQTT connection...");
-      // Attempt to connect
       if (client.connect(mqtt_client_name, mqtt_user, mqtt_pass, USER_MQTT_CLIENT_NAME "/availability", 0, true, "offline"))
       {
         Serial.println("connected");
@@ -331,7 +346,6 @@ void reconnect()
         Serial.print(client.state());
         Serial.println(" try again in 5 seconds");
         retries++;
-        // Wait 5 seconds before retrying
         delay(5000);
       }
     }
@@ -340,6 +354,7 @@ void reconnect()
       ESP.restart();
     }
   }
+  digitalWrite(LED_BUILTIN, LED_OFF);
 }
 
 #ifdef HTTPUpdateServer
@@ -374,16 +389,13 @@ void setup()
   client.setCallback(callback);
 
   digitalWrite(LED_BUILTIN, LED_OFF);
+  checkConnection();
+  publishAttrChange();
 }
 
 void loop()
 {
-  if (!client.connected())
-  {
-    digitalWrite(LED_BUILTIN, LED_ON);
-    reconnect();
-    digitalWrite(LED_BUILTIN, LED_OFF);
-  }
+  checkConnection();
   client.loop();
   timer.run();
 
