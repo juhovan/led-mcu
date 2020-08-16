@@ -11,18 +11,14 @@
 
 int whiteLevel = 255;
 int sun = (SUNSIZE * NUM_LEDS) / 100;
-int aurora = NUM_LEDS;
 int sunPhase = 256;
 int wakeDelay = 256;
-int fadeStep = 998;
 int oldFadeStep = 0;
 int currentAurora = 256;
-int oldAurora = 0;
 int currentSun = 256;
 int oldSun = 0;
 int sunFadeStep = 255;
 int sunFadeStepTimerID = -1;
-int fadeStepTimerID = -1;
 int whiteLevelTimerID = -1;
 int sunPhaseTimerID = -1;
 
@@ -54,27 +50,32 @@ void increaseSunFadeStep()
     }
 }
 
-void increaseFadeStep()
-{
-    if (fadeStep < 256)
-    {
-        fadeStep++;
-    }
-    if (sunPhase < 256)
-    {
-        fadeStepTimerID = timer.setTimeout((wakeDelay / NUM_LEDS / 2), increaseFadeStep);
-    }
-}
-
 void increaseWhiteLevel()
 {
     if (whiteLevel < 256)
     {
         whiteLevel++;
     }
-    if (sunPhase < 256)
+    if (sunPhase < 128)
     {
         whiteLevelTimerID = timer.setTimeout(wakeDelay * 10, increaseWhiteLevel);
+    }
+    else if (sunPhase < 256)
+    {
+        whiteLevelTimerID = timer.setTimeout(wakeDelay * 2, increaseWhiteLevel);
+    }
+}
+
+void drawAurora(int sunLeft, int SunRight)
+{
+    RgbwColor color = RgbwColor(1, 0, 0, 0);
+    for (int i = 0; i < sunLeft; i++)
+    {
+        stripLeds[i] = color;
+    }
+    for (int i = SunRight + 1; i <= NUM_LEDS; i++)
+    {
+        stripLeds[i] = color;
     }
 }
 
@@ -93,70 +94,31 @@ void drawSun()
     int sunStart = (NUM_LEDS / 2) - (currentSun / 2);
     int newSunLeft = sunStart - 1;
     int newSunRight = sunStart + currentSun;
+    int maxRed = map(sunPhase, 0, 256, 255, -20);
+    if (maxRed < 0) {
+        maxRed = 0;
+    }
+    int maxGreen = map(sunPhase, 0, 256, 64, 0);
     if (newSunLeft >= 0 && newSunRight <= NUM_LEDS && sunPhase > 0)
     {
-        int minRed = 127;
-        int minGreen = 64;
-        if (newSunRight - newSunLeft <= 2)
-        {
-            // first pixels, so no aurora on the background to fade from
-            minRed = 0;
-            minGreen = 0;
-        }
-        int redValue = map(sunFadeStep, 0, 256, minRed, 255);
-        int greenValue = map(sunFadeStep, 0, 256, minGreen, 64);
+        int redValue = map(sunFadeStep, 0, 256, 1, maxRed);
+        int greenValue = map(sunFadeStep, 0, 256, 0, maxGreen);
         int whiteValue = map(sunFadeStep, 0, 256, 0, whiteLevel);
         stripLeds[newSunLeft] = RgbwColor(redValue, greenValue, 0, whiteValue);
         stripLeds[newSunRight] = RgbwColor(redValue, greenValue, 0, whiteValue);
     }
+    drawAurora(newSunLeft, newSunRight);
+
+    RgbwColor color = RgbwColor(maxRed, maxGreen, 0, whiteLevel);
     for (int i = sunStart; i < sunStart + currentSun; i++)
     {
-        stripLeds[i] = RgbwColor(255, 64, 0, whiteLevel);
+        stripLeds[i] = color;
     }
     oldSun = currentSun;
 }
 
-void drawAurora()
-{
-    currentAurora = map(sunPhase, 0, 256, 0, aurora);
-    if (currentAurora % 2 != 0)
-    {
-        currentAurora--;
-    }
-    if (currentAurora != oldAurora)
-    {
-        fadeStep = 0;
-    }
-    int sunStart = (NUM_LEDS / 2) - (currentAurora / 2);
-    int newAuroraLeft = sunStart - 1;
-    int newAuroraRight = sunStart + currentAurora;
-    if (newAuroraLeft >= 0 && newAuroraRight <= NUM_LEDS)
-    {
-        int redValue = map(fadeStep, 0, 256, whiteLevel / 2, 127);
-        int greenValue = map(fadeStep, 0, 256, 0, 25);
-        stripLeds[newAuroraRight] = RgbwColor(redValue, greenValue, 0, 0);
-        stripLeds[newAuroraLeft] = RgbwColor(redValue, greenValue, 0, 0);
-    }
-    for (int i = sunStart; i < sunStart + currentAurora; i++)
-    {
-        stripLeds[i] = RgbwColor(127, 25, 0, 0);
-    }
-    oldFadeStep = fadeStep;
-    oldAurora = currentAurora;
-}
-
-void drawAmbient()
-{
-    for (int i = 0; i < NUM_LEDS; i++)
-    {
-        stripLeds[i] = RgbwColor(whiteLevel / 2, 0, 0, 0);
-    }
-}
-
 void sunrise()
 {
-    drawAmbient();
-    drawAurora();
     drawSun();
 }
 
@@ -164,16 +126,11 @@ void startSunrise(int duration)
 {
     whiteLevel = 0;
     sunPhase = 0;
-    fadeStep = 0;
     sunFadeStep = 0;
     wakeDelay = duration * 4;
     if (sunFadeStepTimerID != -1)
     {
         timer.deleteTimer(sunFadeStepTimerID);
-    }
-    if (fadeStepTimerID != -1)
-    {
-        timer.deleteTimer(fadeStepTimerID);
     }
     if (whiteLevelTimerID != -1)
     {
@@ -185,6 +142,5 @@ void startSunrise(int duration)
     }
     increaseSunPhase();
     increaseWhiteLevel();
-    increaseFadeStep();
     increaseSunFadeStep();
 }
