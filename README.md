@@ -15,32 +15,34 @@ For Home Assistant you'll want something like this in your configuration.yaml:
 ```
 light:
   - platform: mqtt
+    schema: template
     name: Bedroom ledstrip
     command_topic: "LED_MCU/command"
     state_topic: "LED_MCU/state"
     availability_topic: "LED_MCU/availability"
     json_attributes_topic: "LED_MCU/attributes"
-    rgb_command_topic: "LED_MCU/color"
-    rgb_state_topic: "LED_MCU/colorState"
-    white_value_command_topic: "LED_MCU/white"
-    white_value_state_topic: "LED_MCU/whiteState"
-    white_value_scale: 255
-    effect_command_topic: "LED_MCU/effect"
-    effect_state_topic: "LED_MCU/effectState"
+    command_on_template: "on,{{ transition }},{{ red }},{{ green }},{{ blue }},{{ white_value }},{{ brightness }},{{ effect }}"
+    command_off_template: "off,{{ transition }}"
+    state_template: "{{ value.split(',')[0] }}"
+    red_template: "{{ value.split(',')[2] }}"
+    green_template: "{{ value.split(',')[3] }}"
+    blue_template: "{{ value.split(',')[4] }}"
+    white_value_template: "{{ value.split(',')[5] }}"
+    brightness_template: "{{ value.split(',')[6] }}"
+    effect_template: "{{ value.split(',')[7] }}"
     effect_list: 
       - stable
       - gradient
       - custom
       - sunrise
       - colorloop
-    retain: true
 ```
 
 ## MQTT control
 
-All MQTT commands *except* the sunrise (`LED_MCU/wakeAlarm`) should be sent with the `retain` flag set to let the MCU restore the desired state and configuration after a reboot.
+All MQTT commands to the command topic should be sent without the `retain` flag set because the MCU automatically restores the state from the state topic, as the commands sent to the command topic might be incomplete.
 
-The sunrise (`LED_MCU/wakeAlarm`) turns the leds on (as described below), and thus if it has the `retain` flag set, the MCU will incorrectly start with a sunrise after every reboot.
+The MQTT "configuration" commands that begin with `set` (ie. `setGradient`) should be sent with the `retain` flag set to allow the MCU to restore the non-state configuration after a reboot.
 
 ### Triggering a sunrise
 

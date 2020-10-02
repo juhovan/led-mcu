@@ -2,6 +2,7 @@
 #include <PubSubClient.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266mDNS.h>
+#include <string.h>
 
 #include "common.h"
 
@@ -42,9 +43,17 @@ int sunriseDuration = NUM_LEDS;
 WiFiClient espClient;
 PubSubClient client(espClient);
 NeoPixelBus<NeoGrbwFeature, Neo800KbpsMethod> strip(NUM_LEDS);
-bool boot = true;
 bool on = true;
 char charPayload[MQTT_MAX_PACKET_SIZE];
+char effectStr[64] = "stable";
+// The colorX are pure color, without brightness applied
+uint8_t colorRed = 0;
+uint8_t colorGreen = 0;
+uint8_t colorBlue = 0;
+uint8_t brightness = 0;
+int transition = 1;
+int transitionCounter = 0;
+int transitionTimerID = -1;
 
 int char2int(char input)
 {
@@ -75,6 +84,60 @@ void publishAttrChange()
   client.publish(USER_MQTT_CLIENT_NAME "/attributes", buf, true);
 }
 
+void publishStateChange()
+{
+  char buf[256];
+  snprintf(buf, 256, "%s,%d,%d,%d,%d,%d,%d,%s", (on ? "on" : "off"), transition, colorRed, colorGreen, colorBlue, white, brightness, effectStr);
+  client.publish(USER_MQTT_CLIENT_NAME "/state", buf, true);
+}
+
+void rgbwChange()
+{
+  red = map(colorRed, 0, 255, 0, brightness);
+  green = map(colorGreen, 0, 255, 0, brightness);
+  blue = map(colorBlue, 0, 255, 0, brightness);
+  switch (effect)
+  {
+  case eCustom:
+  case eSunrise:
+  case eColorLoop:
+    // Setting the color or white value should stop effects that don't use the configured color
+    effect = eStable;
+    break;
+  default:
+    break;
+  }
+  startEffect(effect);
+}
+
+void processTransition()
+{
+  int transitionStep = 1;
+  if (transition <= 1)
+  {
+    transitionStep = 2; // one second transition is too short for full 256 steps
+  }
+  transitionCounter -= transitionStep;
+  if (transitionCounter > 0)
+  {
+    transitionTimerID = timer.setTimeout(transition * 1000 / transitionStep / 255, processTransition);
+  }
+  else if (!on)
+  {
+    stopEffect(); // Stop the effect when transition is finished and the new state is off
+  }
+}
+
+void startTransition()
+{
+  if (transitionTimerID != -1)
+  {
+    timer.deleteTimer(transitionTimerID);
+  }
+  transitionTimerID = -1;
+  processTransition();
+}
+
 void callback(char *topic, byte *payload, unsigned int length)
 {
   Serial.print("Message arrived [");
@@ -87,67 +150,109 @@ void callback(char *topic, byte *payload, unsigned int length)
   String newPayload = String(charPayload);
   int intPayload = newPayload.toInt();
   Serial.println(newPayload);
-  Serial.println();
   newPayload.toCharArray(charPayload, newPayload.length() + 1);
 
   if (newTopic == USER_MQTT_CLIENT_NAME "/command")
   {
-    if (strcmp(charPayload, "OFF") == 0)
+    bool onOffTransition = false;
+    transition = 1;
+    char *token, *strPtr, *str;
+    strPtr = str = strdup(charPayload);
+    for (int i = 0; (token = strsep(&str, ",")); i++)
     {
-      on = false;
-      stopEffect();
+      if (!*token)
+      {
+        continue;
+      }
+      switch (i)
+      {
+      case 0: // on/off
+        if (strcmp(token, "on") == 0)
+        {
+          if (!on)
+          {
+            onOffTransition = true;
+          }
+          on = true;
+        }
+        else if (strcmp(token, "off") == 0)
+        {
+          if (on)
+          {
+            onOffTransition = true;
+          }
+          on = false;
+        }
+        break;
+      case 1: // transition
+        transition = atoi(token);
+        break;
+      case 2: // r
+        colorRed = atoi(token);
+        rgbwChange();
+        break;
+      case 3: // g
+        colorGreen = atoi(token);
+        rgbwChange();
+        break;
+      case 4: // b
+        colorBlue = atoi(token);
+        rgbwChange();
+        break;
+      case 5: // w
+        white = atoi(token);
+        rgbwChange();
+        break;
+      case 6: // brightness
+        brightness = atoi(token);
+        rgbwChange();
+        break;
+      case 7: // effect
+        if (strcmp(token, "stable") == 0)
+        {
+          startEffect(eStable);
+        }
+        else if (strcmp(token, "colorloop") == 0)
+        {
+          startEffect(eColorLoop);
+        }
+        else if (strcmp(token, "gradient") == 0)
+        {
+          startEffect(eGradient);
+        }
+        else if (strcmp(token, "custom") == 0)
+        {
+          startEffect(eCustom);
+        }
+        else if (strcmp(token, "sunrise") == 0)
+        {
+          startEffect(eSunrise);
+        }
+        else
+        {
+          Serial.print("Unknown effect: ");
+          Serial.println(token);
+          continue;
+        }
+        strcpy(effectStr, token);
+        break;
+      }
     }
-    else if (strcmp(charPayload, "ON") == 0)
+    free(strPtr);
+    if (onOffTransition)
     {
-      on = true;
-      startEffect(effect);
+      transitionCounter = transition != 0 ? 256 : 0;
     }
-    else
-    {
-      Serial.print("Unknown command: ");
-      Serial.println(charPayload);
-      return;
-    }
-    client.publish(USER_MQTT_CLIENT_NAME "/state", charPayload, true);
-  }
-  else if (newTopic == USER_MQTT_CLIENT_NAME "/effect")
-  {
-    if (strcmp(charPayload, "stable") == 0)
-    {
-      startEffect(eStable);
-    }
-    else if (strcmp(charPayload, "colorloop") == 0)
-    {
-      startEffect(eColorLoop);
-    }
-    else if (strcmp(charPayload, "gradient") == 0)
-    {
-      startEffect(eGradient);
-    }
-    else if (strcmp(charPayload, "custom") == 0)
-    {
-      startEffect(eCustom);
-    }
-    else if (strcmp(charPayload, "sunrise") == 0)
-    {
-      startEffect(eSunrise);
-    }
-    else
-    {
-      Serial.print("Unknown effect: ");
-      Serial.println(charPayload);
-      return;
-    }
-    client.publish(USER_MQTT_CLIENT_NAME "/effectState", charPayload, true);
+    startEffect(effect);
+    publishStateChange();
+    startTransition();
   }
   else if (newTopic == USER_MQTT_CLIENT_NAME "/wakeAlarm")
   {
     on = true;
     sunriseDuration = intPayload;
     startEffect(eSunrise);
-    client.publish(USER_MQTT_CLIENT_NAME "/state", "ON", true);
-    client.publish(USER_MQTT_CLIENT_NAME "/effect", "sunrise", true);
-    client.publish(USER_MQTT_CLIENT_NAME "/effectState", "sunrise", true);
+    publishStateChange();
   }
   else if (newTopic == USER_MQTT_CLIENT_NAME "/setGradient")
   {
@@ -169,8 +274,7 @@ void callback(char *topic, byte *payload, unsigned int length)
         return;
       }
       startEffect(eGradient);
-      client.publish(USER_MQTT_CLIENT_NAME "/effect", "gradient", true);
-      client.publish(USER_MQTT_CLIENT_NAME "/effectState", "gradient", true);
+      publishStateChange();
       publishAttrChange();
     }
     else
@@ -214,8 +318,7 @@ void callback(char *topic, byte *payload, unsigned int length)
       }
     }
     startEffect(eCustom);
-    client.publish(USER_MQTT_CLIENT_NAME "/effect", "custom", true);
-    client.publish(USER_MQTT_CLIENT_NAME "/effectState", "custom", true);
+    publishStateChange();
     // TODO: add this to attributes and publishAttrChange();
   }
   else if (newTopic == USER_MQTT_CLIENT_NAME "/setEnabledLeds")
@@ -234,50 +337,11 @@ void callback(char *topic, byte *payload, unsigned int length)
     }
     // TODO: add this to attributes and publishAttrChange();
   }
-  else if (newTopic == USER_MQTT_CLIENT_NAME "/white")
+  else if (newTopic == USER_MQTT_CLIENT_NAME "/state")
   {
-    white = intPayload;
-    switch (effect)
-    {
-    case eCustom:
-    case eSunrise:
-    case eColorLoop:
-      // Setting the white value should stop effects that don't use the configured color
-      effect = eStable;
-      client.publish(USER_MQTT_CLIENT_NAME "/effect", "stable", true);
-      client.publish(USER_MQTT_CLIENT_NAME "/effectState", "stable", true);
-      break;
-    default:
-      break;
-    }
-    startEffect(effect);
-    client.publish(USER_MQTT_CLIENT_NAME "/whiteState", charPayload, true);
-  }
-  else if (newTopic == USER_MQTT_CLIENT_NAME "/color")
-  {
-    int firstIndex = newPayload.indexOf(',');
-    int lastIndex = newPayload.lastIndexOf(',');
-    if ((firstIndex > -1) && (lastIndex > -1) && (firstIndex != lastIndex))
-    {
-      red = newPayload.substring(0, firstIndex).toInt();
-      green = newPayload.substring(firstIndex + 1, lastIndex).toInt();
-      blue = newPayload.substring(lastIndex + 1).toInt();
-      switch (effect)
-      {
-      case eCustom:
-      case eSunrise:
-      case eColorLoop:
-        // Setting the color should stop effects that don't use the configured color
-        effect = eStable;
-        client.publish(USER_MQTT_CLIENT_NAME "/effect", "stable", true);
-        client.publish(USER_MQTT_CLIENT_NAME "/effectState", "stable", true);
-        break;
-      default:
-        break;
-      }
-      startEffect(effect);
-      client.publish(USER_MQTT_CLIENT_NAME "/colorState", charPayload, true);
-    }
+    // restore previous state after a reboot
+    client.publish(USER_MQTT_CLIENT_NAME "/command", charPayload);
+    client.unsubscribe(USER_MQTT_CLIENT_NAME "/state");
   }
 }
 
@@ -322,23 +386,12 @@ void checkConnection()
       {
         Serial.println("connected");
         client.publish(USER_MQTT_CLIENT_NAME "/availability", "online", true);
-        if (boot)
-        {
-          client.publish(USER_MQTT_CLIENT_NAME "/checkIn", "rebooted");
-          boot = false;
-        }
-        else
-        {
-          client.publish(USER_MQTT_CLIENT_NAME "/checkIn", "reconnected");
-        }
         client.subscribe(USER_MQTT_CLIENT_NAME "/command");
-        client.subscribe(USER_MQTT_CLIENT_NAME "/effect");
-        client.subscribe(USER_MQTT_CLIENT_NAME "/color");
-        client.subscribe(USER_MQTT_CLIENT_NAME "/white");
         client.subscribe(USER_MQTT_CLIENT_NAME "/wakeAlarm");
         client.subscribe(USER_MQTT_CLIENT_NAME "/setGradient");
         client.subscribe(USER_MQTT_CLIENT_NAME "/setCustom");
         client.subscribe(USER_MQTT_CLIENT_NAME "/setEnabledLeds");
+        client.subscribe(USER_MQTT_CLIENT_NAME "/state"); // used for state restoration after a reboot
       }
       else
       {
@@ -399,7 +452,26 @@ void loop()
   client.loop();
   timer.run();
 
-  if (on)
+  if (transitionCounter > 0)
+  {
+    float multiplier = map(transitionCounter, 0, 255, 0, 1000) / 1000.f;
+    if (on)
+    {
+      multiplier = 1.f - multiplier;
+    }
+    for (int i = 0; i < NUM_LEDS; i++)
+    {
+      if (enabledLeds[i / 8] >> (7 - (i % 8)) & 1)
+      {
+        strip.SetPixelColor(i, RgbwColor(stripLeds[i].R * multiplier, stripLeds[i].G * multiplier, stripLeds[i].B * multiplier, stripLeds[i].W * multiplier));
+      }
+      else
+      {
+        strip.SetPixelColor(i, RgbwColor(0, 0, 0, 0));
+      }
+    }
+  }
+  else if (on)
   {
     for (int i = 0; i < NUM_LEDS; i++)
     {
