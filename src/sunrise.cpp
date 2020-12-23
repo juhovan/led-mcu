@@ -32,8 +32,6 @@ void increaseSunPhase()
     if (sunPhase < 256)
     {
         sunPhase++;
-        Serial.print("sunPhase: ");
-        Serial.println(sunPhase);
         sunPhaseTimerID = timer.setTimeout(wakeDelay, increaseSunPhase);
     }
 }
